@@ -164,30 +164,60 @@ module resolution is correct either way, shebangs are now fixed too.
 
 ---
 
-### Phase 1 — FlightGear → Python telemetry link  ⬅ NEXT
-- [ ] Write `fg-fault-demo/protocol/telemetry.xml` (generic protocol, JSON-ish output,
-      all properties from §2, `var_separator`/`line_separator` set for one line per frame)
-- [ ] Decide transport: UDP socket vs `file,out` — **UDP preferred** (no disk I/O, no file locking)
-- [ ] `backend/fg_reader.py`: bind socket, parse line, validate + coerce types,
-      drop malformed frames, expose `latest_state()` and `state_stream()`
-- [ ] Unit check: print altitude + airspeed at ~30 Hz from a live FG session
+### Phase 1 — FlightGear → Python telemetry link ✅ DONE (verified)
 
-**Exit criteria**
-- FlightGear launches with the custom `--generic=` flag and no error
-- Python terminal prints coherent, non-zero telemetry at 25–30 Hz
-- Values match what's on screen in FG (± small tolerance)
+- [x] `fg-fault-demo/protocol/telemetry.xml` — 26 chunks, ASCII, `var_separator=`,``,
+      `line_separator=newline`, one `k=v` line per frame. Symlinked into
+      `$FG_ROOT/Protocol/telemetry.xml` (that dir is the only lookup path).
+- [x] **Transport decided: UDP socket** (`--generic=socket,out,30,localhost,5510,udp,telemetry`).
+      `file,out` was used only as the first-launch syntax check, per the risk table.
+- [x] `backend/fg_reader.py` — binds UDP 5510, `parse_line()` validates + coerces,
+      drops malformed frames (never propagates them), exposes `latest_state()`,
+      `age_seconds()`, `states()` generator, `stats`. Includes a `__main__` smoke test.
+- [x] Live check against a running FG session.
 
-**Risks**
-| Risk | Mitigation |
+**Exit criteria — all met**
+- ✅ FG launches with the custom `--generic=` flag, no protocol errors in the log
+- ✅ `frames ok=270 bad=0 (~22.5 Hz)` — meets the ≥20 Hz acceptance (capped by `--max-fps=30`)
+- ✅ Values coherent: `alt=146.06 ft`, `ias=9.06 kt`, `hdg=180.01`, `pitch=4.89`,
+      `az=-32.1 ft/s²` (exactly −1 g → parked, physics sane), `t` advancing 274→285 s
+- ✅ **Cross-checked against ground truth:** `lat=63.9918, lon=-22.6054` = Keflavík (BIKF),
+      published ARP 63.9850°N / 22.6056°W — longitude matches to 0.0002°.
+      Confirms property paths read real data, not placeholders.
+
+**Verified property paths (corrected from first guesses)**
+| Purpose | Correct path | First guess (WRONG) |
+|---|---|---|
+| body rates p/q/r | `/orientation/{p,q,r}-body` | `/velocities/p-body` |
+| GPS groundspeed witness | `/velocities/speed-{north,east}-fps` | `/velocities/speed-ground-fps` (does not exist) |
+| accel body axes | `/accelerations/pilot/{x,y,z}-accel-fps_sec` | `/accelerations/N{x,y,z}` |
+| baro | `/position/altitude-ft` + `/instrumentation/altimeter/indicated-altitude-ft` | — |
+
+**Gotchas hit (for future reference)**
+- **XML comments must not contain `--`** — a comment containing the literal `--generic`
+  made the file unparseable (`ElementTree.ParseError` at line 7). Use `[generic option]`.
+- **`<type>` defaults to `int`** in the generic protocol; every float chunk must declare
+  `<type>float</type>` or values truncate.
+- **FG is a ~2 GB process.** On this 7.4 GB box (Firefox ~2 GB + 3 GB swap in use) the
+  kernel OOM-killed it twice. Launch lean: `--ai-models=0 --ai-traffic=0
+  --terrasync=0 --sound=0 --splash-screen=0 --random-{vegetation,objects,buildings}=0
+  --lod-levels=2`. The AI subsystem was loading Nimitz/Eisenhower carrier models —
+  pure waste for this demo.
+- `alt=-9999.00` and `t=0.000` for the first ~2 s are **startup transients**, not a bug.
+- Don't `rm -f` FG's output file while FG holds it open — it keeps writing to an
+  unlinked inode and the path reads 0 bytes.
+
+**Risks (as planned)**
+| Risk | Outcome |
 |---|---|
-| `--generic` flag syntax wrong → FG exits | Test with `file,out` to a temp file first, then switch to UDP |
-| Property names differ in 2024.1.7 | Probe the live property tree with `--telnet` and confirm names before writing XML |
-| Frames arrive but are garbage | Log raw bytes once, fix separators, then silence the debug path |
-| Rate lower than expected | Accept ≥20 Hz; only tune if below |
+| `--generic` flag syntax wrong → FG exits | Cleared: syntax confirmed from `$FG_ROOT/Docs/README.IO` lines 22–34 |
+| Property names differ in 2024.1.7 | Cleared: verified against `Protocol/aura-imu.xml` + `flightrecorder/components/position.xml` |
+| Frames arrive but are garbage | 0 bad frames out of 270 |
+| Rate lower than expected | 22.5 Hz ≥ 20 Hz acceptance |
 
 ---
 
-### Phase 2 — Sensor channels + fault injection
+### Phase 2 — Sensor channels + fault injection  ⬅ NEXT
 - [ ] `sensor_channels.py`: truth state → channel dict (with units normalised)
 - [ ] `faults.py`: injectors, **exactly one active at a time**
   - `freeze(channel, at_value)` — pitot blockage
@@ -272,9 +302,14 @@ over ≥60 s of flight.
 
 ## 6. Open questions
 
-1. Which aircraft to use for the demo? (needs to be present in the AppImage/fgdata)
-2. Does FG's generic protocol expose `/velocities/p-body_rad_sec` and magnetic heading
-   separately in 2024.1.7? → **verify in Phase 1 before committing to the channel list**
+1. Which aircraft to use for the demo? → **RESOLVED: `c172p`** (present in fgdata,
+   real piston aircraft with working instruments; `ufo`/`aisim`/`Generic` are the others).
+2. Does FG's generic protocol expose body rates and heading separately in 2024.1.7?
+   → **RESOLVED in Phase 1: yes.** Body rates at `/orientation/{p,q,r}-body` (rad/s),
+   heading at `/orientation/heading-deg`, AoA at `/orientation/alpha-deg`,
+   sideslip at `/orientation/beta-deg` — all confirmed live. **No separate magnetic
+   heading property is used**: `/orientation/heading-deg` is what we take as the
+   "mag heading" channel for the demo (see open question 5).
 3. Auto-start with engines running and airborne, or taxi/ground roll?
 4. Should the fault also be *visible in the aircraft's behavior* (C1: FG owns physics),
    or is the fault purely in the instrument reading? → **default: instrument-only,
