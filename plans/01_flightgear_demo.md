@@ -292,19 +292,24 @@ raising a random alarm on clean data. Gate is bypassed in `train()` mode so
 3/3 testable faults; the random head then overrules it with a wrong guess.
 Confidence on the correct sensor = 0.00 (need > 0.9). Training is the fix.
 
-**Three distinct blockers, in the order they must be cleared**
+**Three blockers — status after calibration (FG restart NOT needed):**
 
 1. **Random head** → wrong sensor whenever the gate opens.
-   *Fix: training.* (User's deliberate choice for now.)
-2. **Gate threshold 0.5 is above `gyro_drift`'s 0.252** → fault silently
-   reported as `none`. *Fix: lower threshold, or let training learn it.*
-   Note clean data maxes at 0.112, so ~0.2 would separate them today.
-3. **`baro_bias` is structurally undetectable** — a constant offset changes no
-   derivative, and the 7 channels contain no *independent* altitude level.
-   *Fix: add `/instrumentation/gps/indicated-altitude-ft` to
-   `protocol/telemetry.xml`* — property confirmed to exist in fgdata
-   (`gui/dialogs/gps.xml`, `c172p` garmin196 panel). **Requires an FG restart,
-   so waiting for the user's go-ahead.**
+   *Fix: training.* (User's deliberate choice for now.) **← the only one left**
+2. ~~Gate threshold 0.5 above `gyro_drift`'s 0.252~~ → **FIXED**: threshold now
+   **0.2**. Calibrated against live FG — clean peaks at 0.112 (still 27/27 and
+   60/60 abstained, no false alarms), `gyro_drift` reaches 0.382 → gate OPEN,
+   encoder picks `gyro`. `mag_drift` 0.756, `gps_noise` 18.2, `accel_noise` 8.9.
+3. ~~`baro_bias` structurally undetectable~~ → **RESOLVED, no restart needed.**
+   A constant offset changes no derivative, so a *level* comparison against any
+   second altitude source fails: `alt`=146.06 ft vs `altind`=738.88 ft differ by
+   a fixed 592.82 ft QNH offset, and the baseline would have to be learned.
+   **Instead the fault is caught at onset** by the existing per-channel
+   `max|step|` feature: activating `baro_bias` mid-stream gives encoder score
+   **33.33 on `baro`** (only nonzero), gate OPEN. Detection is therefore
+   *transient* — it alarms on the frame the button is pressed, then settles to
+   `none` once the offset becomes the new normal. Persisting the alarm through
+   a learned baseline is a training-time job.
 
 **Files:** `backend/model.py` (encoder, `FaultDetector`, `DetectorOutput`,
 `WindowBuffer`), `backend/phase3_test.py` (clean-score survey + per-fault run).

@@ -196,13 +196,16 @@ class FaultDetector(nn.Module):
         threshold: abstention gate. A per-sensor score below this means
             "nothing looks wrong" and the model reports ``none`` regardless of
             what the (untrained) head would have said.
+            Calibrated against live FG: clean data peaks at 0.112, gyro_drift
+            reaches 0.252, mag_drift 0.756, gps_noise 18.2. So 0.2 sits above
+            clean (no false alarms) and below every observed fault.
     """
 
     def __init__(
         self,
         window: int = DEFAULT_WINDOW,
         hidden: int = 64,
-        threshold: float = 0.5,
+        threshold: float = 0.2,
     ) -> None:
         super().__init__()
         self.window = window
