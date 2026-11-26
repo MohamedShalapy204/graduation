@@ -245,26 +245,73 @@ Freeze faults show 0 delta only because the c172p is parked (airspeed ≈ 5 kt, 
 
 ---
 
-### Phase 3 — The model (`model.py`)  ⬅ NEXT
-- [ ] Define `DetectorOutput` dataclass: `probs: dict[str,float]`, `top_sensor: str`,
-      `confidence: float`, `reason: str`
-- [ ] `FaultDetector(nn.Module)`:
-  - input window `[B, T, C]` (T ≈ 50 steps, C = channels)
+### Phase 3 — The model (`model.py`) ✅ ARCHITECTURE DONE — exit criteria BLOCKED on training
+
+- [x] Define `DetectorOutput` dataclass: `probs: dict[str,float]`, `top_sensor: str`,
+      `confidence: float`, `reason: str` (+ `warmup: bool`)
+- [x] `FaultDetector(nn.Module)`:
+  - input window `[B, T, C]` (T = 50 steps, C = 7)
   - cross-channel consistency residuals
   - temporal consistency (rate-of-change, integration drift)
-  - aggregation → per-sensor probability (softmax over sensors + "none")
-- [ ] `reason` string is generated from *which residual fired*, e.g.
-      `"pitot frozen: airspeed variance≈0 while GPS groundspeed=42 m/s"`
-- [ ] Handle warm-up (window not yet full) → emit `none` / low confidence
-- [ ] Handle "no fault" → all probs low, top_sensor = `none`
+  - aggregation → per-sensor probability (softmax over sensors + `"none"`)
+- [x] `reason` string generated from *which residual fired*
+- [x] Handle warm-up (window not yet full) → `none` / confidence 0
+- [x] Handle "no fault" → `top_sensor = none`
 
-**Exit criteria:** with each fault type injected in turn, the model names the correct
-sensor with confidence > 0.9, and returns `none` on clean data with no false alarm
-over ≥60 s of flight.
+**Weights: RANDOM (user's explicit choice — "Literal random weights").**
+`head` is `Linear(24→64) → ReLU → Linear(64→8)`, PyTorch default init, never
+trained. The plan's rejected-alternatives table predicted the consequence
+("Autoencoder with random weights … Not a model."). We ship the architecture;
+training comes in ground-truth plan phase 2.
+
+**Architecture — two deliberately separated parts**
+
+| Part | Learnable? | Job |
+|---|---|---|
+| `ResidualEncoder` | **no** (fixed buffers) | temporal `std`/`\|slope\|`/`max\|step\|` per channel + 3 cross-channel rate disagreements → 24 features, plus a per-sensor anomaly `score` |
+| `FaultDetector.head` | **yes, random** | 24 → 64 → 8 logits, softmax over 7 sensors + `none` |
+
+The **abstention gate** (score < `threshold` → `none`) and **warm-up** are
+deterministic and do NOT depend on the weights. They are what stop the demo
+raising a random alarm on clean data. Gate is bypassed in `train()` mode so
+`none` still receives a gradient later.
+
+**Verified against live FlightGear** (`backend/phase3_test.py`):
+
+| Condition | Encoder pick (deterministic) | Score | Gate | Head pick (random) | Exit criteria |
+|---|---|---|---|---|---|
+| clean, 60 windows | — | max 0.112 | CLOSED | — | ✅ `none` 60/60, no false alarm |
+| `gps_noise` | **gps** ✅ | 18.199 | OPEN | accel ❌ | ❌ FAIL |
+| `accel_noise` | **accel** ✅ | 8.861 | OPEN | baro ❌ | ❌ FAIL |
+| `mag_drift` | **mag** ✅ | 0.756 | OPEN | gps ❌ | ❌ FAIL |
+| `gyro_drift` | **gyro** ✅ | 0.252 | **CLOSED** | — | ❌ FAIL (gate too high) |
+| `baro_bias` | baro (tied 0.000) | 0.000 | CLOSED | — | ❌ FAIL (see below) |
+| `pitot_blockage` / `vane_stuck` | — | — | — | — | ⏸ not testable — aircraft parked |
+
+**Exit criteria: BLOCKED.** The deterministic encoder names the right sensor in
+3/3 testable faults; the random head then overrules it with a wrong guess.
+Confidence on the correct sensor = 0.00 (need > 0.9). Training is the fix.
+
+**Three distinct blockers, in the order they must be cleared**
+
+1. **Random head** → wrong sensor whenever the gate opens.
+   *Fix: training.* (User's deliberate choice for now.)
+2. **Gate threshold 0.5 is above `gyro_drift`'s 0.252** → fault silently
+   reported as `none`. *Fix: lower threshold, or let training learn it.*
+   Note clean data maxes at 0.112, so ~0.2 would separate them today.
+3. **`baro_bias` is structurally undetectable** — a constant offset changes no
+   derivative, and the 7 channels contain no *independent* altitude level.
+   *Fix: add `/instrumentation/gps/indicated-altitude-ft` to
+   `protocol/telemetry.xml`* — property confirmed to exist in fgdata
+   (`gui/dialogs/gps.xml`, `c172p` garmin196 panel). **Requires an FG restart,
+   so waiting for the user's go-ahead.**
+
+**Files:** `backend/model.py` (encoder, `FaultDetector`, `DetectorOutput`,
+`WindowBuffer`), `backend/phase3_test.py` (clean-score survey + per-fault run).
 
 ---
 
-### Phase 4 — Server + HTML/JS dashboard
+### Phase 4 — Server + HTML/JS dashboard  ⬅ NEXT
 - [ ] `server.py`: static file server for `web/` + WebSocket endpoint `/ws`
 - [ ] Message schema (JSON, one object per frame):
       `{ t, channels:{...}, truth:{...}, verdict:{ top_sensor, confidence, reason, probs },
