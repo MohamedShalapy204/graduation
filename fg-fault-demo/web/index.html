@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlightGear Fault Detection</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===================== verdict banner ===================== -->
+<header id="banner" class="banner banner--warmup">
+  <div class="banner__left">
+    <div class="banner__label">Model verdict</div>
+    <div id="verdict-sensor" class="banner__sensor">warming up</div>
+    <div id="verdict-reason" class="banner__reason">collecting frames&hellip;</div>
+  </div>
+
+  <div class="banner__right">
+    <div class="chip" id="chip-conn" title="WebSocket connection">connecting</div>
+    <div class="chip" id="chip-gate" title="anomaly gate (encoder score vs threshold)">gate &ndash;</div>
+    <div class="chip" id="chip-encoder" title="highest encoder score across sensors">encoder &ndash;</div>
+    <div class="chip chip--warn" id="chip-weights" title="model weight status">weights &ndash;</div>
+    <div class="chip" id="chip-fps">0 fps</div>
+  </div>
+</header>
+
+<!-- ===================== signal / fault status ===================== -->
+<div id="status-strip" class="status-strip status-strip--ok">
+  <span id="status-text">connecting&hellip;</span>
+  <span id="fault-text" class="fault-text"></span>
+</div>
+
+<main class="grid">
+
+  <!-- ===================== attitude indicator ===================== -->
+  <section class="card card--adi">
+    <h2>Attitude</h2>
+    <canvas id="adi" width="300" height="300"></canvas>
+    <div class="adi-readout">
+      <div><span class="k">Pitch</span><span id="r-pitch" class="v">0.0&deg;</span></div>
+      <div><span class="k">Roll</span><span id="r-roll" class="v">0.0&deg;</span></div>
+      <div><span class="k">Heading</span><span id="r-hdg" class="v">0.0&deg;</span></div>
+    </div>
+  </section>
+
+  <!-- ===================== telemetry gauges ===================== -->
+  <section class="card">
+    <h2>Telemetry</h2>
+    <div class="gauges">
+      <div class="gauge"><div class="gauge__label">Airspeed</div><div class="gauge__value"><span id="g-ias">0.0</span><em>kt</em></div></div>
+      <div class="gauge"><div class="gauge__label">Altitude</div><div class="gauge__value"><span id="g-alt">0</span><em>ft</em></div></div>
+      <div class="gauge"><div class="gauge__label">V/S</div><div class="gauge__value"><span id="g-vs">0.0</span><em>ft/s</em></div></div>
+      <div class="gauge"><div class="gauge__label">Mach</div><div class="gauge__value"><span id="g-mach">0.000</span><em>M</em></div></div>
+      <div class="gauge"><div class="gauge__label">AoA</div><div class="gauge__value"><span id="g-alpha">0.0</span><em>deg</em></div></div>
+      <div class="gauge"><div class="gauge__label">Throttle</div><div class="gauge__value"><span id="g-thr">0</span><em>%</em></div></div>
+    </div>
+    <div class="meta">
+      <span>frames ok <b id="m-ok">0</b></span>
+      <span>bad <b id="m-bad">0</b></span>
+      <span>age <b id="m-age">0.00</b>s</span>
+      <span>window <b id="m-win">0</b>/50</span>
+    </div>
+  </section>
+
+  <!-- ===================== channel table ===================== -->
+  <section class="card card--wide">
+    <h2>Sensor channels <small>(model input &mdash; corrupted value vs clean truth)</small></h2>
+    <table id="channels">
+      <thead>
+        <tr>
+          <th>Channel</th>
+          <th class="num">Reading</th>
+          <th class="num">Truth</th>
+          <th class="num">&Delta;</th>
+          <th class="score">Anomaly score</th>
+          <th>Trace</th>
+        </tr>
+      </thead>
+      <tbody><!-- rows injected by app.js --></tbody>
+    </table>
+  </section>
+
+  <!-- ===================== fault buttons ===================== -->
+  <section class="card card--wide">
+    <h2>Fault injection <small>(instrument-only &mdash; corrupts the reading, never the physics)</small></h2>
+    <div id="faults" class="faults"><!-- buttons injected by app.js --></div>
+    <p class="hint">Single-fault assumption: injecting one fault replaces any fault already active.</p>
+  </section>
+
+</main>
+
+<footer>
+  FlightGear &rarr; generic UDP protocol &rarr; Python detector &rarr; WebSocket.
+  Encoder is deterministic; the classifier head is <b>untrained</b> &mdash; see weights chip.
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

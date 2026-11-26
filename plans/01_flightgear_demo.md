@@ -316,22 +316,66 @@ Confidence on the correct sensor = 0.00 (need > 0.9). Training is the fix.
 
 ---
 
-### Phase 4 — Server + HTML/JS dashboard  ⬅ NEXT
-- [ ] `server.py`: static file server for `web/` + WebSocket endpoint `/ws`
-- [ ] Message schema (JSON, one object per frame):
-      `{ t, channels:{...}, truth:{...}, verdict:{ top_sensor, confidence, reason, probs },
-         active_fault }`
-- [ ] `web/index.html` layout: attitude indicator · telemetry gauges ·
+### Phase 4 — Server + HTML/JS dashboard  ✅ DONE (verified at protocol level)
+- [x] `server.py`: static file server for `web/` + WebSocket endpoint `/ws`
+      — **single port 8000**, static served through the handshake via
+      `process_request`, so there is one URL to open and one port to firewall.
+- [x] Message schema (JSON, one object per frame):
+      `{ t, raw:{…}, channels:{…}, truth:{…}, attitude:{pitch,roll,hdg},
+         verdict:{ top_sensor, confidence, reason, probs, sensor_scores,
+                   gate_open, warmup }, active_fault, stats }`
+      + `hello` on connect (channels, units, faults, threshold, weights) and
+      `fault_state` / `status` / `error` control frames.
+      `sensor_scores` + `gate_open` are **additive** extensions: without them
+      the banner could only show the untrained head's answer with no
+      explanation, which looks broken even though the encoder is correct.
+- [x] `web/index.html` layout: attitude indicator · telemetry gauges ·
       live channel table · **model verdict banner** · fault-injection buttons
-- [ ] `web/app.js`: WebSocket client, reconnect w/ backoff, ~30 Hz render,
-      canvas attitude indicator, sparklines for residuals
-- [ ] `web/style.css`: dark cockpit theme, readable at projector distance
+- [x] `web/app.js`: WebSocket client, reconnect w/ backoff (0.5 s → 5 s cap),
+      ~30 Hz render throttled in a rAF loop, canvas attitude indicator,
+      per-channel sparklines of the anomaly score
+- [x] `web/style.css`: dark cockpit theme, readable at projector distance
 
-**Exit criteria:** browser shows live telemetry + correct model verdict, updating smoothly.
+**Exit criteria:** browser shows live telemetry + correct model verdict,
+updating smoothly.
+
+**Verified** — `phase4_ws_test.py` drives the browser's own protocol end to
+end against the live server: **44 passed, 0 failed**.
+- static: `/`, `/app.js`, `/style.css` all 200; `../../etc/passwd` → 404
+- `hello` schema complete (7 channels, 7 presets, numeric threshold, units)
+- telemetry at **≥10 Hz** (measured ~24 Hz), `frames_bad == 0`,
+  `probs` covers 7 sensors + `none`, `sensor_scores` covers 7 sensors
+- warm-up completes once the window fills
+- `gyro_drift` → corrupts **exactly** `['gyro']`; `baro_bias` → exactly
+  `['baro']`; `clear()` → `[]` both times
+- unknown fault → `error` naming the bad preset; non-object JSON →
+  `error: expected a JSON object`; server keeps streaming after both
+- `node --check app.js` clean; every `$("id")` in app.js exists in index.html;
+  JS `PRESET_CHANNEL` maps **exactly** match `faults.py` `PRESETS`
+
+**⏳ still pending:** visual confirmation in an actual browser (layout, ADI
+drawing, sparklines). The data/render contract is verified; the pixels are
+not yet eyeballed.
+
+**Bugs found and fixed during Phase 4**
+1. `websockets` 17's `Request` has **no `extensions` attribute** (fields are
+   `path, headers, method, protocol`) — passing `app` into the handler that
+   way would have crashed on first connect. Now a closure over `app`.
+2. `ResidualEncoder.forward` requires `[B,T,C]`; only `FaultDetector.forward`
+   unsqueezes a bare `[T,C]`. Calling `model.encoder(t)` directly raised
+   `expected [B,T,C], got shape (10, 7)` on every frame → `tensor.unsqueeze(0)`.
+3. `age_seconds()` correctly returns `inf` before the first frame, but
+   `"%.1fs" % inf` printed `NO SIGNAL for infs` → now formats as
+   `never received any`.
+4. A valid-JSON **non-object** frame was silently dropped; now answered with
+   an error (the module docstring promised this).
+5. `pkill -f "server.py --port"` **kills its own shell** — the command string
+   contains the pattern. Kill by listener PID instead:
+   `ss -tlnp | grep :8000 | grep -o 'pid=[0-9]*'`.
 
 ---
 
-### Phase 5 — Integration + demo hardening
+### Phase 5 — Integration + demo hardening  ⬅ NEXT
 - [ ] `run.sh`: one command → starts FG with correct flags, backend, opens browser
 - [ ] Failure handling: FG not running → clear message; port busy → clear message
 - [ ] Fault buttons: `Pitot Blockage`, `Gyro Drift`, `Baro Bias`, `Clear`
