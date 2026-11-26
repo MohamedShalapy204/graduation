@@ -217,21 +217,35 @@ module resolution is correct either way, shebangs are now fixed too.
 
 ---
 
-### Phase 2 — Sensor channels + fault injection  ⬅ NEXT
-- [ ] `sensor_channels.py`: truth state → channel dict (with units normalised)
-- [ ] `faults.py`: injectors, **exactly one active at a time**
+### Phase 2 — Sensor channels + fault injection ✅ DONE (verified)
+- [x] `sensor_channels.py`: truth state → channel dict (with units normalised)
+- [x] `faults.py`: injectors, **exactly one active at a time**
   - `freeze(channel, at_value)` — pitot blockage
   - `ramp(channel, rate)` — gyro / mag drift
   - `bias(channel, delta)` — baro error
   - `noise(channel, sigma)` — sensor degradation
-- [ ] `FaultController` with `set_active(fault_type)` / `clear()`
-- [ ] Log: clean channels vs corrupted channel, side by side
+- [x] `FaultController` with `set_active(fault_type)` / `clear()`
+- [x] Log: clean channels vs corrupted channel, side by side
 
 **Exit criteria:** toggling a fault in code visibly corrupts exactly one channel and no other.
 
+**Verified against live FlightGear (all 7 presets):**
+| Fault | Channel | Result |
+|---|---|---|
+| `pitot_blockage` | pitot | ✅ (delta 0 while parked — freezes current value) |
+| `vane_stuck` | vane | ✅ (delta 0 while parked — freezes current value) |
+| `gyro_drift` | gyro | ✅ delta grows +0.01 rad/s² |
+| `mag_drift` | mag | ✅ delta grows +0.03 rad/s |
+| `baro_bias` | baro | ✅ constant +100 m offset |
+| `gps_noise` | gps | ✅ Gaussian jitter σ=4 m/s |
+| `accel_noise` | accel | ✅ Gaussian jitter σ=1.5 m/s² |
+
+All faults: exactly one channel corrupted, others clean. `changed_channels()` proves it.
+Freeze faults show 0 delta only because the c172p is parked (airspeed ≈ 5 kt, AoA ≈ constant). In flight they will diverge from truth.
+
 ---
 
-### Phase 3 — The model (`model.py`)
+### Phase 3 — The model (`model.py`)  ⬅ NEXT
 - [ ] Define `DetectorOutput` dataclass: `probs: dict[str,float]`, `top_sensor: str`,
       `confidence: float`, `reason: str`
 - [ ] `FaultDetector(nn.Module)`:
