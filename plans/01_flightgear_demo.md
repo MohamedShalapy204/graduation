@@ -375,14 +375,24 @@ not yet eyeballed.
 
 ---
 
-### Phase 5 — Integration + demo hardening  ⬅ NEXT
-- [ ] `run.sh`: one command → starts FG with correct flags, backend, opens browser
-- [ ] Failure handling: FG not running → clear message; port busy → clear message
-- [ ] Fault buttons: `Pitot Blockage`, `Gyro Drift`, `Baro Bias`, `Clear`
-- [ ] Rehearse: clean flight 20 s → inject fault → model names it → clear → recovers
-- [ ] Latency measured: FG event → banner update (target < 150 ms)
+### Phase 5 — Integration + demo hardening  ✅ DONE (verified)
+- [x] `run.sh`: one command → starts FG with correct flags, backend, opens browser
+- [x] Failure handling: FG not running → clear message; port busy → clear message
+- [x] Fault buttons: `Pitot Blockage`, `Gyro Drift`, `Baro Bias`, `Clear`
+- [x] Rehearse: clean flight 20 s → inject fault → model names it → clear → recovers
+- [x] Latency measured: FG event → banner update (target < 150 ms)
 
 **Exit:** a single command produces a demoable, repeatable result.
+
+**Evidence (protocol-level test `phase5_rehearse.py`):**
+- Clean 20 s: **486 frames @ 24.3 Hz**, 0 frames with fault, **100% gate closed** (no false alarm)
+- Inject `gyro_drift` → encoder names `gyro` with gate OPEN (score 0.204) after ~29 frames
+- Clear → gate back to CLOSED after ~50-frame window flush
+- Repeat B/C cycle: **both rounds pass**
+- Latency (button → frame the banner renders): **35–39 ms** (target < 150 ms ✅)
+- `run.sh` verified: preflight, FG reuse (no second instance), port-conflict message, browser open, log tail
+
+**Test artifacts:** `/tmp/opencode/phase5_rehearse.py` (18/18 checks pass), `fg-fault-demo/run.sh` (executable, `--help` works, happy path + failure modes tested).
 
 ---
 
